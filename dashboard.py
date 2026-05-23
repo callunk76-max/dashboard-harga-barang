@@ -210,23 +210,19 @@ col2.metric('Kelompok Barang', total_kelompok)
 st.divider()
 
 # --- Filters ---
-fcol1, fcol1b, fcol2, fcol3, fcol4 = st.columns([2.5, 0.2, 1.5, 1.5, 2.3])
+fcol1, fcol2, fcol3, fcol4 = st.columns([3, 1.5, 1.5, 2.5])
 
 with fcol1:
-    search = st.text_input(
+    # Multi-select with max 1 item = autocomplete + built-in X to remove
+    nama_options = sorted(df['nama'].dropna().unique().tolist())
+    selected = st.multiselect(
         '🔍 Cari barang (nama atau kode)',
-        placeholder='Ketik nama atau kode barang...',
+        nama_options,
+        placeholder='Ketik nama barang...',
+        max_selections=1,
         key='search_input',
     )
-
-with fcol1b:
-    # X button only appears when there's text typed
-    if search:
-        st.write('&nbsp;')
-        st.markdown('<div style="height:7px"></div>', unsafe_allow_html=True)
-        if st.button('✕', key='btn_clear_search', help='Hapus pencarian'):
-            st.session_state.search_input = ''
-            st.rerun()
+    search = selected[0] if selected else ''
 
 with fcol2:
     kelompok_list = ['Semua'] + sorted(df['kelompok'].unique().tolist())
