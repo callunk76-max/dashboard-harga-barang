@@ -21,20 +21,122 @@ if 'uploaded_df' not in st.session_state:
 if 'upload_auth' not in st.session_state:
     st.session_state.upload_auth = False
 
-# --- CSS ---
+# --- CSS (lightweight, all CSS, zero JS) ---
 st.markdown("""
 <style>
+    /* --- HEADER --- */
+    .custom-header {
+        background: linear-gradient(135deg, #1a365d 0%, #2563eb 100%);
+        padding: 1.2rem 1.8rem;
+        border-radius: 12px;
+        margin-bottom: 1rem;
+        color: white;
+    }
+    .custom-header h1 {
+        color: white !important;
+        margin: 0;
+        font-size: 1.8rem !important;
+        font-weight: 700;
+    }
+    .custom-header .sub {
+        color: rgba(255,255,255,0.8);
+        font-size: 0.9rem;
+        margin-top: 0.3rem;
+    }
+    .badge-data {
+        display: inline-block;
+        background: rgba(255,255,255,0.15);
+        padding: 0.2rem 0.8rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        margin-left: 0.5rem;
+    }
+
+    /* --- TABLE --- */
     td:first-child, th:first-child {
         max-width: 50px !important;
         min-width: 40px !important;
         width: 50px !important;
         text-align: center !important;
     }
-    .stTextInput > div > div > input {
-        font-size: 0.95rem;
+    div[data-testid="stDataFrame"] td {
+        font-size: 0.85rem !important;
+        padding: 0.3rem 0.5rem !important;
+    }
+    div[data-testid="stDataFrame"] tr:nth-child(even) {
+        background-color: #f8fafc !important;
+    }
+    div[data-testid="stDataFrame"] tr:hover {
+        background-color: #e0e7ff !important;
+    }
+
+    /* --- METRICS --- */
+    div[data-testid="metric-container"] {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 0.8rem 1rem;
+    }
+    div[data-testid="metric-container"]:hover {
+        border-color: #2563eb;
     }
     div[data-testid="stMetricValue"] {
-        font-size: 1.8rem !important;
+        font-size: 1.6rem !important;
+        font-weight: 700;
+        color: #1a365d;
+    }
+    div[data-testid="stMetricLabel"] {
+        font-size: 0.8rem !important;
+        color: #64748b;
+    }
+
+    /* --- SIDEBAR STATS --- */
+    .stat-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 0.5rem 0.8rem;
+        margin-bottom: 0.4rem;
+    }
+    .stat-card .label {
+        font-size: 0.75rem;
+        color: #64748b;
+    }
+    .stat-card .value {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #1a365d;
+    }
+
+    /* --- FILTERS --- */
+    .stSelectbox, .stSlider, .stMultiSelect {
+        font-size: 0.85rem;
+    }
+
+    /* --- FOOTER --- */
+    .custom-footer {
+        text-align: center;
+        padding: 1rem;
+        border-top: 1px solid #e2e8f0;
+        margin-top: 1rem;
+        font-size: 0.75rem;
+        color: #94a3b8;
+    }
+
+    /* --- DIVIDER --- */
+    hr {
+        margin: 0.8rem 0 !important;
+        border-color: #e2e8f0 !important;
+    }
+
+    /* --- BUTTONS --- */
+    .stButton > button {
+        border-radius: 6px !important;
+        font-size: 0.85rem !important;
+    }
+    .stDownloadButton > button {
+        border-radius: 6px !important;
+        font-size: 0.85rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -314,12 +416,28 @@ with st.sidebar:
         current_df = get_default_data()
     
     st.divider()
-    st.subheader('📊 Ringkasan')
-    st.caption(f'**Total Item:** {len(current_df):,}')
-    st.caption(f'**Kelompok:** {current_df["kelompok"].nunique()}')
-    st.caption(f'**Rata-rata Harga:** Rp {int(current_df["harga"].mean()):,}')
-    st.caption(f'**Harga Tertinggi:** Rp {int(current_df["harga"].max()):,}')
-    st.caption(f'**Harga Terendah:** Rp {int(current_df["harga"].min()):,}')
+    st.markdown(f"""
+        <div class="stat-card">
+            <div class="label">Total Item</div>
+            <div class="value">{len(current_df):,}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Kelompok Barang</div>
+            <div class="value">{current_df['kelompok'].nunique()}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Rata-rata Harga</div>
+            <div class="value">Rp {int(current_df['harga'].mean()):,}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Harga Tertinggi</div>
+            <div class="value">Rp {int(current_df['harga'].max()):,}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Harga Terendah</div>
+            <div class="value">Rp {int(current_df['harga'].min()):,}</div>
+        </div>
+    """, unsafe_allow_html=True)
     
     # Manual refresh button (clears cache)
     col_r1, col_r2 = st.columns([1, 2])
@@ -331,11 +449,20 @@ with st.sidebar:
         st.caption(f'{len(current_df):,} item')
 
     st.divider()
-    st.caption('**callunk76-max/dashboard-harga-barang**')
+    st.caption('📦 v1.0')
 
 # --- Main ---
-st.title('📊 Dashboard Standar Harga Satuan Biaya Barang')
-st.caption('SK Bupati Bulukumba Tahun 2025')
+total_items = len(df)
+total_kelompok = df['kelompok'].nunique()
+st.markdown(f"""
+<div class="custom-header">
+    <h1>📊 Dashboard Standar Harga Satuan Biaya Barang
+        <span class="badge-data">{total_items:,} item</span>
+        <span class="badge-data">{total_kelompok} kelompok</span>
+    </h1>
+    <div class="sub">SK Bupati Bulukumba Tahun 2025</div>
+</div>
+""", unsafe_allow_html=True)
 
 # Load data
 if st.session_state.data_source == 'upload' and st.session_state.uploaded_df is not None:
@@ -345,12 +472,7 @@ else:
     df = get_default_data()
     st.session_state.data_source = 'default'
 
-total_items = len(df)
-total_kelompok = df['kelompok'].nunique()
-
-col1, col2 = st.columns(2)
-col1.metric('Total Item', f'{total_items:,}')
-col2.metric('Kelompok Barang', total_kelompok)
+# Total items already shown in header badge - no need to repeat metrics here
 
 st.divider()
 
@@ -472,9 +594,10 @@ if not filtered.empty:
 else:
     st.info('Tidak ada item yang cocok dengan filter.')
 
-st.divider()
-st.caption(
-    'Sumber: SK Standar Harga Satuan Biaya Barang 2025 (Final).pdf | '
-    f'Total {total_items:,} item dari {total_kelompok} kelompok | '
-    'Dibuat dengan Streamlit'
-)
+st.markdown(f"""
+<div class="custom-footer">
+    Sumber: SK Standar Harga Satuan Biaya Barang 2025 (Final).pdf &nbsp;·&nbsp;
+    {total_items:,} item · {total_kelompok} kelompok &nbsp;·&nbsp;
+    callunk76-max/dashboard-harga-barang
+</div>
+""", unsafe_allow_html=True)
