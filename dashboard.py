@@ -217,8 +217,11 @@ st.divider()
 col_f1, col_f2, col_f3, col_f4 = st.columns([3, 2, 1.5, 2.5])
 
 with col_f1:
-    search = st.text_input(
+    # Searchable selectbox with autocomplete (type to filter)
+    nama_list = [''] + sorted(df['nama'].dropna().unique().tolist())
+    search = st.selectbox(
         '🔍 Cari barang (nama atau kode)',
+        nama_list,
         placeholder='Ketik nama atau kode barang...',
         key='search_input',
     )
@@ -243,6 +246,11 @@ with col_f4:
             format='Rp %d',
             key='price_slider',
         )
+        # Show active range indicator
+        if price_range[0] > 0 or price_range[1] < max_price:
+            st.caption(f'✅ Filter aktif: Rp {price_range[0]:,} - Rp {price_range[1]:,}')
+        else:
+            st.caption(f'Rp 0 - Rp {max_price:,}')
     else:
         price_range = (0, 1)
         st.caption('Data harga belum tersedia')
@@ -251,9 +259,10 @@ with col_f4:
 filtered = df.copy()
 
 if search:
-    # Live filter as user types - matches nama or kode
+    # Filter by exact name match OR partial kode/nama match
     mask = (
-        filtered['nama'].str.contains(search, case=False, na=False)
+        (filtered['nama'] == search)
+        | filtered['nama'].str.contains(search, case=False, na=False)
         | filtered['kode'].str.contains(search, case=False, na=False)
     )
     filtered = filtered[mask]
