@@ -23,24 +23,6 @@ if 'upload_auth' not in st.session_state:
 if 'search_key' not in st.session_state:
     st.session_state.search_key = 0
 
-# --- CSS ---
-st.markdown("""
-<style>
-.clear-btn-wrap {
-    display: flex; align-items: flex-end; justify-content: center;
-    height: 100%; padding-bottom: 2px;
-}
-.clear-btn-wrap .stButton button {
-    min-width: unset; width: 34px; height: 34px; padding: 0;
-    font-size: 18px; line-height: 1; border-radius: 4px;
-    border: 1px solid transparent; background: transparent; color: #aaa;
-}
-.clear-btn-wrap .stButton button:hover {
-    border-color: #ddd; color: #333; background: #f5f5f5;
-}
-</style>
-""", unsafe_allow_html=True)
-
 # --- Helpers ---
 @st.cache_data
 def load_default_data():
@@ -200,15 +182,8 @@ st.divider()
 col_f1, col_f2, col_f3, col_f4 = st.columns([3, 2, 1.5, 2.5])
 
 with col_f1:
-    sc, bc = st.columns([10, 1])
-    with sc:
-        sk = f's_{st.session_state.search_key}'
-        search = st.text_input('🔍 Cari barang', placeholder='Nama / kode barang...', key=sk)
-    with bc:
-        st.markdown('<div class="clear-btn-wrap">', unsafe_allow_html=True)
-        st.button('✕', key='clear_s', help='Hapus pencarian',
-                  on_click=lambda: st.session_state.update(search_key=st.session_state.search_key + 1))
-        st.markdown('</div>', unsafe_allow_html=True)
+    sk = f's_{st.session_state.search_key}'
+    search = st.text_input('🔍 Cari barang', placeholder='Nama / kode barang...', key=sk)
 
 with col_f2:
     kelompok_list = ['Semua'] + sorted(df['kelompok'].unique().tolist())
@@ -260,6 +235,7 @@ if not filtered.empty:
     st.dataframe(
         display_df,
         use_container_width=True,
+        hide_index=True,
         column_config={
             'No': st.column_config.NumberColumn('No', width='small'),
             'kode': 'Kode',
