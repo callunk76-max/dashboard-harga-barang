@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import os
 import re
-import tempfile
-import zipfile
 from pathlib import Path
 
 st.set_page_config(
@@ -22,6 +20,26 @@ if 'uploaded_df' not in st.session_state:
     st.session_state.uploaded_df = None
 if 'upload_auth' not in st.session_state:
     st.session_state.upload_auth = False
+if 'search_key' not in st.session_state:
+    st.session_state.search_key = 0
+
+# --- CSS ---
+st.markdown("""
+<style>
+.clear-btn-wrap {
+    display: flex; align-items: flex-end; justify-content: center;
+    height: 100%; padding-bottom: 2px;
+}
+.clear-btn-wrap .stButton button {
+    min-width: unset; width: 34px; height: 34px; padding: 0;
+    font-size: 18px; line-height: 1; border-radius: 4px;
+    border: 1px solid transparent; background: transparent; color: #aaa;
+}
+.clear-btn-wrap .stButton button:hover {
+    border-color: #ddd; color: #333; background: #f5f5f5;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # --- Helpers ---
 @st.cache_data
@@ -182,19 +200,15 @@ st.divider()
 col_f1, col_f2, col_f3, col_f4 = st.columns([3, 2, 1.5, 2.5])
 
 with col_f1:
-    s_col, btn_col = st.columns([8, 1])
-    with s_col:
-        search = st.text_input(
-            '🔍 Cari barang',
-            placeholder='Nama / kode barang...',
-            key='search_input',
-        )
-    with btn_col:
-        st.write('')
-        st.write('')
-        if st.button('✕', help='Hapus pencarian'):
-            st.session_state.search_input = ''
-            st.rerun()
+    sc, bc = st.columns([10, 1])
+    with sc:
+        sk = f's_{st.session_state.search_key}'
+        search = st.text_input('🔍 Cari barang', placeholder='Nama / kode barang...', key=sk)
+    with bc:
+        st.markdown('<div class="clear-btn-wrap">', unsafe_allow_html=True)
+        st.button('✕', key='clear_s', help='Hapus pencarian',
+                  on_click=lambda: st.session_state.update(search_key=st.session_state.search_key + 1))
+        st.markdown('</div>', unsafe_allow_html=True)
 
 with col_f2:
     kelompok_list = ['Semua'] + sorted(df['kelompok'].unique().tolist())
@@ -218,12 +232,10 @@ with col_f4:
 # --- Apply Filters ---
 filtered = df.copy()
 
-search_val = st.session_state.get('search_input', '')
-
-if search_val:
+if search:
     mask = (
-        filtered['nama'].str.contains(search_val, case=False, na=False)
-        | filtered['kode'].str.contains(search_val, case=False, na=False)
+        filtered['nama'].str.contains(search, case=False, na=False)
+        | filtered['kode'].str.contains(search, case=False, na=False)
     )
     filtered = filtered[mask]
 
