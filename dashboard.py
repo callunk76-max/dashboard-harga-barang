@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
 import os
-
-CSV_PATH = os.path.join(os.path.dirname(__file__), 'harga_barang.csv')
+import re
+import tempfile
+import zipfile
+from pathlib import Path
 
 st.set_page_config(
     page_title='Dashboard Harga Satuan Barang',
@@ -10,17 +12,162 @@ st.set_page_config(
     layout='wide',
 )
 
-st.title('📊 Dashboard Standar Harga Satuan Biaya Barang')
-st.caption('SK Bupati Bulukumba Tahun 2025')
+CSV_PATH = os.path.join(os.path.dirname(__file__), 'harga_barang.csv')
+UPLOAD_PASSWORD = '13Kholil'
 
+# --- Session state init ---
+if 'data_source' not in st.session_state:
+    st.session_state.data_source = 'default'
+if 'uploaded_df' not in st.session_state:
+    st.session_state.uploaded_df = None
+if 'upload_auth' not in st.session_state:
+    st.session_state.upload_auth = False
+
+# --- Helpers ---
 @st.cache_data
-def load_data():
+def load_default_data():
     df = pd.read_csv(CSV_PATH)
     df['harga'] = pd.to_numeric(df['harga'], errors='coerce').fillna(0).astype(int)
     df = df.sort_values(['kelompok', 'nama']).reset_index(drop=True)
     return df
 
-df = load_data()
+def parse_csv(file):
+    df = pd.read_csv(file)
+    expected = {'kode', 'kelompok', 'nama', 'satuan', 'harga'}
+    cols = set(df.columns.str.lower().str.strip())
+    if not expected.intersection(cols):
+        st.error('Format CSV tidak sesuai. Minimal harus ada kolom: kode, kelompok, nama, satuan, harga')
+        return None
+    df.columns = df.columns.str.lower().str.strip()
+    if 'harga' in df.columns:
+        df['harga'] = pd.to_numeric(df['harga'], errors='coerce').fillna(0).astype(int)
+    return df
+
+def parse_excel(file):
+    df = pd.read_excel(file, engine='openpyxl')
+    df.columns = df.columns.str.lower().str.strip()
+    expected = {'kode', 'kelompok', 'nama', 'satuan', 'harga'}
+    cols = set(df.columns)
+    if not expected.intersection(cols):
+        st.error('Format Excel tidak sesuai. Minimal harus ada kolom: kode, kelompok, nama, satuan, harga')
+        return None
+    if 'harga' in df.columns:
+        df['harga'] = pd.to_numeric(df['harga'], errors='coerce').fillna(0).astype(int)
+    return df
+
+def parse_pdf(file):
+    try:
+        import pdfplumber
+        import pytesseract
+        from PIL import Image
+        import io
+    except ImportError:
+        st.error('Library OCR tidak tersedia. Install: pip install pdfplumber pytesseract Pillow')
+        return None
+
+    rows = []
+    kode_re = re.compile(r'(\d{1,2}[,.]\d{1,2}[,.]\d{1,2}[,.]\d{1,2}[,.]\d{1,2}[,.]\d{4})')
+    price_re = re.compile(r'(\d{1,3}(?:[.,]\d{3})+)')
+
+    with pdfplumber.open(file) as pdf:
+        progress = st.progress(0, 'Memproses PDF...')
+        for i, page in enumerate(pdf.pages):
+            text = page.extract_text()
+            if not text:
+                img = page.to_image(resolution=200)
+                pil_img = img.original
+                text = pytesseract.image_to_string(pil_img, lang='eng+ind', config='--psm 3')
+            for line in text.split('\n'):
+                line = line.strip()
+                if not line or len(line) < 15:
+                    continue
+                km = kode_re.search(line)
+                pm = price_re.search(line)
+                if km and pm:
+                    kode = km.group(1).replace(',', '.')
+                    harga = pm.group(1).replace(',', '').replace('.', '')
+                    try:
+                        harga = int(harga)
+                    except:
+                        continue
+                    rest = line[km.end():pm.start()].strip()
+                    kelompok = ''
+                    nama = rest
+                    if '|' in rest:
+                        parts = [p.strip().strip('_| ') for p in rest.split('|') if p.strip()]
+                        kelompok = parts[0] if parts else ''
+                        nama = ' '.join(parts[1:]) if len(parts) > 1 else (parts[0] if parts else rest)
+                    rows.append({
+                        'kode': kode,
+                        'kelompok': kelompok,
+                        'nama': nama,
+                        'satuan': '',
+                        'harga': harga,
+                    })
+            progress.progress((i + 1) / len(pdf.pages), f'Memproses PDF... {i+1}/{len(pdf.pages)}')
+
+    if not rows:
+        st.error('Tidak ada data yang bisa diekstrak dari PDF')
+        return None
+    df = pd.DataFrame(rows)
+    df = df.sort_values(['kelompok', 'nama']).reset_index(drop=True)
+    return df
+
+# --- Sidebar: Upload ---
+with st.sidebar:
+    st.header('📤 Upload Data')
+    with st.expander('Upload file harga satuan', expanded=False):
+        pw = st.text_input('Password', type='password', placeholder='Masukkan password')
+        if pw == UPLOAD_PASSWORD:
+            st.session_state.upload_auth = True
+            st.success('✅ Akses diberikan')
+
+            uploaded_file = st.file_uploader(
+                'Pilih file (CSV, Excel, PDF)',
+                type=['csv', 'xlsx', 'xls', 'pdf'],
+            )
+
+            if uploaded_file and st.button('Proses Upload'):
+                ext = Path(uploaded_file.name).suffix.lower()
+                with st.spinner(f'Memproses {uploaded_file.name}...'):
+                    if ext == '.csv':
+                        new_df = parse_csv(uploaded_file)
+                    elif ext in ('.xlsx', '.xls'):
+                        new_df = parse_excel(uploaded_file)
+                    elif ext == '.pdf':
+                        new_df = parse_pdf(uploaded_file)
+                    else:
+                        new_df = None
+                        st.error('Format file tidak didukung')
+
+                if new_df is not None and len(new_df) > 0:
+                    st.session_state.uploaded_df = new_df
+                    st.session_state.data_source = 'upload'
+                    st.success(f'✅ {len(new_df)} item berhasil diupload!')
+                    st.rerun()
+
+            if st.session_state.uploaded_df is not None:
+                if st.button('🔄 Kembali ke data default'):
+                    st.session_state.uploaded_df = None
+                    st.session_state.data_source = 'default'
+                    st.rerun()
+        elif pw:
+            st.error('❌ Password salah')
+
+    st.divider()
+    st.caption('**callunk76-max/dashboard-harga-barang**')
+
+# --- Main ---
+st.title('📊 Dashboard Standar Harga Satuan Biaya Barang')
+st.caption('SK Bupati Bulukumba Tahun 2025')
+
+# Load data
+if st.session_state.data_source == 'upload' and st.session_state.uploaded_df is not None:
+    df = st.session_state.uploaded_df.copy()
+    st.info(f'📁 Menggunakan data upload: {len(df)} item')
+else:
+    df = load_default_data()
+    st.session_state.data_source = 'default'
 
 total_items = len(df)
 total_kelompok = df['kelompok'].nunique()
@@ -32,15 +179,22 @@ col2.metric('Kelompok Barang', total_kelompok)
 st.divider()
 
 # --- Filters ---
-col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+col_f1, col_f2, col_f3, col_f4 = st.columns([3, 2, 1.5, 2.5])
 
 with col_f1:
-    nama_list = df['nama'].dropna().unique().tolist()
-    selected_nama = st.selectbox(
-        '🔍 Cari barang',
-        [''] + sorted(nama_list),
-        placeholder='Ketik nama barang...',
-    )
+    s_col, btn_col = st.columns([8, 1])
+    with s_col:
+        search = st.text_input(
+            '🔍 Cari barang',
+            placeholder='Nama / kode barang...',
+            key='search_input',
+        )
+    with btn_col:
+        st.write('')
+        st.write('')
+        if st.button('✕', help='Hapus pencarian'):
+            st.session_state.search_input = ''
+            st.rerun()
 
 with col_f2:
     kelompok_list = ['Semua'] + sorted(df['kelompok'].unique().tolist())
@@ -52,21 +206,24 @@ with col_f3:
     selected_satuan = st.selectbox('Satuan', satuan_list)
 
 with col_f4:
+    max_price = int(df['harga'].max())
     price_range = st.slider(
         'Rentang Harga (Rp)',
         min_value=0,
-        max_value=int(df['harga'].max()),
-        value=(0, int(df['harga'].max())),
+        max_value=max_price,
+        value=(0, max_price),
         format='Rp %d',
     )
 
 # --- Apply Filters ---
 filtered = df.copy()
 
-if selected_nama:
+search_val = st.session_state.get('search_input', '')
+
+if search_val:
     mask = (
-        filtered['nama'].str.contains(selected_nama, case=False, na=False)
-        | filtered['kode'].str.contains(selected_nama, case=False, na=False)
+        filtered['nama'].str.contains(search_val, case=False, na=False)
+        | filtered['kode'].str.contains(search_val, case=False, na=False)
     )
     filtered = filtered[mask]
 
@@ -107,7 +264,7 @@ if not filtered.empty:
     with col_ex1:
         csv = filtered.to_csv(index=False).encode('utf-8-sig')
         st.download_button(
-            '⬇ Download CSV',
+            '⬇ Download Filtered CSV',
             csv,
             'harga_barang_filtered.csv',
             'text/csv',
