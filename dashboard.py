@@ -72,6 +72,7 @@ def parse_excel(file):
     return df
 
 def parse_pdf(file):
+    """Parse PDF harga satuan (scanned/image PDF with OCR)."""
     try:
         import pdfplumber
         import pytesseract
@@ -80,52 +81,182 @@ def parse_pdf(file):
         st.error('Library OCR tidak tersedia. Install: pip install pdfplumber pytesseract Pillow')
         return None
 
-    rows = []
+    # Regex: kode 6-group, price at END of line only!
     kode_re = re.compile(r'(\d{1,2}[,.]\d{1,2}[,.]\d{1,2}[,.]\d{1,2}[,.]\d{1,2}[,.]\d{4})')
-    price_re = re.compile(r'(\d{1,3}(?:[.,]\d{3})+)')
+    price_end_re = re.compile(r'(\d{1,3}(?:[.,]\d{3})+(?:,\d+)?)\s*$')
 
+    # Known kelompok names from the SK for auto-detection
+    KELOMPOK_KNOWN = [
+        'Bahan Bangunan dan Konstruksi', 'Bahan Baku / Obat-obatan', 'Bahan Kimia',
+        'Bahan Bakar dan Pelumas', 'Alat Listrik', 'Alat Pendingin', 'Alat Studio',
+        'Alat Laboratorium', 'Alat Kedokteran', 'Alat Komunikasi', 'Alat Keamanan',
+        'Alat Olahraga', 'Alat Pemadam Kebakaran', 'Alat Penangkap Ikan',
+        'Alat Besar Darat', 'Pompa', 'Perabot Kantor', 'Komputer',
+        'Peralatan Komputer', 'Bahan/Bibit Hewan', 'Lainnya',
+    ]
+
+    SATUAN_KEYWORDS = {
+        'buah': 'Buah', 'unit': 'Unit', 'batang': 'Batang', 'lembar': 'Lembar',
+        'botol': 'Botol', 'bungkus': 'Bungkus', 'dus': 'Dus', 'dos': 'Dos',
+        'kg': 'Kg', 'tube': 'Tube', 'box': 'Box', 'pcs': 'Pcs', 'ampul': 'Ampul',
+        'meter': 'Meter', 'pack': 'Pack', 'set': 'Set', 'gram': 'Gram',
+        'liter': 'Liter', 'lusin': 'Lusin', 'ekor': 'Ekor', 'zak': 'Zak',
+        'drum': 'Drum', 'ton': 'Ton', 'pasang': 'Pasang', 'kapsul': 'Kapsul',
+        'tablet': 'Tablet', 'strip': 'Strip', 'karton': 'Karton',
+        'sak': 'Sak', 'karung': 'Karung', 'rol': 'Rol', 'pasang': 'Pasang',
+        'pair': 'Pair', 'inch': 'Inch', 'kodi': 'Kodi', 'rim': 'Rim',
+        'butir': 'Butir', 'biji': 'Biji', 'kantong': 'Kantong',
+    }
+
+    def clean_ocr_rest(rest_text):
+        """Clean the text between kode and price."""
+        t = rest_text.strip()
+        # Remove leading/trailing punctuation and separators
+        t = re.sub(r'^[\s_|>\-\[\]()"\'#@*]+|[\s_|>\-\[\]()"\'#@*]+$', '', t)
+        # Collapse multiple spaces
+        t = re.sub(r'\s+', ' ', t)
+        return t
+
+    def extract_kelompok_nama(text):
+        """Extract kelompok and nama from the middle text."""
+        text = clean_ocr_rest(text)
+        
+        # Method 1: Has explicit | separator
+        if '|' in text:
+            parts = [p.strip().strip('_| ') for p in text.split('|') if p.strip()]
+            if parts:
+                kelompok = parts[0] if len(parts) >= 1 else ''
+                nama = ' '.join(parts[1:]) if len(parts) > 1 else (parts[0] if parts else text)
+                return kelompok, nama
+        
+        # Method 2: Try to detect kelompok from known list at start of text
+        for k in sorted(KELOMPOK_KNOWN, key=len, reverse=True):
+            if text.lower().startswith(k.lower()):
+                rest = text[len(k):].strip()
+                rest = re.sub(r'^[\s_|>\-]+|[\s_|>\-]+$', '', rest)
+                if rest and len(rest) > 3:
+                    return k, rest
+        
+        # Method 3: No kelompok detected, put everything in nama
+        return '', text
+
+    def detect_satuan(nama_text):
+        """Try to infer satuan from nama text."""
+        if not nama_text:
+            return ''
+        words = nama_text.lower().split()
+        if not words:
+            return ''
+        # Check last word
+        last = words[-1].strip('.,;:()[]')
+        if last in SATUAN_KEYWORDS:
+            return SATUAN_KEYWORDS[last]
+        # Check second-to-last for patterns like "50 Kg"
+        if len(words) >= 2:
+            second_last = words[-2].strip('.,;:()[]')
+            if second_last in SATUAN_KEYWORDS:
+                return SATUAN_KEYWORDS[second_last]
+        return ''
+
+    def clean_item_name(nama):
+        """Clean up OCR artifacts in item names."""
+        if not nama:
+            return nama
+        n = nama.strip()
+        # Remove consecutive duplicate words (Aspal Aspal -> Aspal)
+        words = n.split()
+        cleaned = []
+        i = 0
+        while i < len(words):
+            w = words[i]
+            # Single word duplicate: "Aspal Aspal"
+            if i + 1 < len(words) and words[i+1].lower() == w.lower() and len(w) > 2:
+                cleaned.append(w)
+                i += 2
+            else:
+                cleaned.append(w)
+                i += 1
+        n = ' '.join(cleaned)
+        # Fix trailing "Ke" leftover
+        n = re.sub(r'\s+Ke$', '', n).strip()
+        return n
+
+    # ---- Main parsing ----
+    rows = []
     with pdfplumber.open(file) as pdf:
-        progress = st.progress(0, 'Memproses PDF...')
+        total_pages = len(pdf.pages)
+        progress = st.progress(0, f'Memproses {total_pages} halaman...')
+        
         for i, page in enumerate(pdf.pages):
+            # 1) Try text extraction
             text = page.extract_text()
-            if not text:
+            if not text or len(text.strip()) < 50:
+                # 2) Fallback: OCR
                 img = page.to_image(resolution=200)
-                pil_img = img.original
-                text = pytesseract.image_to_string(pil_img, lang='eng+ind', config='--psm 3')
+                text = pytesseract.image_to_string(
+                    img.original,
+                    lang='eng+ind',
+                    config='--psm 3 --oem 3'
+                )
+
             for line in text.split('\n'):
                 line = line.strip()
                 if not line or len(line) < 15:
                     continue
+                
                 km = kode_re.search(line)
-                pm = price_re.search(line)
-                if km and pm:
-                    kode = km.group(1).replace(',', '.')
-                    harga = pm.group(1).replace(',', '').replace('.', '')
-                    try:
-                        harga = int(harga)
-                    except:
-                        continue
-                    rest = line[km.end():pm.start()].strip()
-                    kelompok = ''
-                    nama = rest
-                    if '|' in rest:
-                        parts = [p.strip().strip('_| ') for p in rest.split('|') if p.strip()]
-                        kelompok = parts[0] if parts else ''
-                        nama = ' '.join(parts[1:]) if len(parts) > 1 else (parts[0] if parts else rest)
-                    rows.append({
-                        'kode': kode,
-                        'kelompok': kelompok,
-                        'nama': nama,
-                        'satuan': '',
-                        'harga': harga,
-                    })
-            progress.progress((i + 1) / len(pdf.pages), f'Memproses PDF... {i+1}/{len(pdf.pages)}')
+                pm = price_end_re.search(line)
+                
+                if not (km and pm):
+                    continue
+                
+                # Ensure price is AFTER kode (not overlapping)
+                if pm.start() <= km.end():
+                    continue
+                
+                kode = km.group(1).replace(',', '.')
+                
+                # Parse price: remove dots, keep decimals
+                price_str = pm.group(1).replace('.', '').replace(',', '.')
+                try:
+                    # Check if it has decimal
+                    if '.' in price_str:
+                        harga = int(float(price_str))
+                    else:
+                        harga = int(price_str)
+                except (ValueError, OverflowError):
+                    continue
+                
+                # Extract middle text (kelompok + nama)
+                rest = line[km.end():pm.start()].strip()
+                if not rest or len(rest) < 3:
+                    continue
+                
+                kelompok, nama = extract_kelompok_nama(rest)
+                nama = clean_item_name(nama)
+                satuan = detect_satuan(nama)
+                
+                if not nama or len(nama) < 3:
+                    continue
+                
+                rows.append({
+                    'kode': kode,
+                    'kelompok': kelompok,
+                    'nama': nama,
+                    'satuan': satuan,
+                    'harga': harga,
+                })
+            
+            pct = (i + 1) / total_pages
+            progress.progress(pct, f'Halaman {i+1}/{total_pages} ({len(rows)} item ditemukan)')
 
     if not rows:
-        st.error('Tidak ada data yang bisa diekstrak dari PDF')
+        st.error('Tidak ada data yang bisa diekstrak dari PDF. Periksa format PDF atau kualitas scan.')
         return None
+    
     df = pd.DataFrame(rows)
     df = df.sort_values(['kelompok', 'nama']).reset_index(drop=True)
+    
     return df
 
 # --- Sidebar ---
