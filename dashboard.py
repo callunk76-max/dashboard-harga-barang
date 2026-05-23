@@ -40,12 +40,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Helpers ---
-@st.cache_data
-def load_default_data():
+@st.cache_data(ttl=300)  # auto refresh setiap 5 menit
+def load_default_data(_csv_mtime):
     df = pd.read_csv(CSV_PATH)
     df['harga'] = pd.to_numeric(df['harga'], errors='coerce').fillna(0).astype(int)
     df = df.sort_values(['kelompok', 'nama']).reset_index(drop=True)
     return df
+
+def get_default_data():
+    """Load data with cache buster based on file timestamp."""
+    mtime = os.path.getmtime(CSV_PATH) if os.path.exists(CSV_PATH) else 0
+    return load_default_data(mtime)
 
 def parse_csv(file):
     df = pd.read_csv(file)
@@ -306,7 +311,7 @@ with st.sidebar:
     if st.session_state.data_source == 'upload' and st.session_state.uploaded_df is not None:
         current_df = st.session_state.uploaded_df.copy()
     else:
-        current_df = load_default_data()
+        current_df = get_default_data()
     
     st.divider()
     st.subheader('📊 Ringkasan')
@@ -315,6 +320,15 @@ with st.sidebar:
     st.caption(f'**Rata-rata Harga:** Rp {int(current_df["harga"].mean()):,}')
     st.caption(f'**Harga Tertinggi:** Rp {int(current_df["harga"].max()):,}')
     st.caption(f'**Harga Terendah:** Rp {int(current_df["harga"].min()):,}')
+    
+    # Manual refresh button (clears cache)
+    col_r1, col_r2 = st.columns([1, 2])
+    with col_r1:
+        if st.button('🔄 Refresh', help='Muatin ulang data dari CSV'):
+            st.cache_data.clear()
+            st.rerun()
+    with col_r2:
+        st.caption(f'{len(current_df):,} item')
 
     st.divider()
     st.caption('**callunk76-max/dashboard-harga-barang**')
@@ -328,7 +342,7 @@ if st.session_state.data_source == 'upload' and st.session_state.uploaded_df is 
     df = st.session_state.uploaded_df.copy()
     st.info(f'📁 Menggunakan data upload: {len(df)} item')
 else:
-    df = load_default_data()
+    df = get_default_data()
     st.session_state.data_source = 'default'
 
 total_items = len(df)
