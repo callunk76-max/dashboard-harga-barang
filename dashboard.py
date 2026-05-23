@@ -220,11 +220,13 @@ with fcol1:
     )
 
 with fcol1b:
-    st.write('&nbsp;')  # label spacer
-    st.markdown('<div style="height:7px"></div>', unsafe_allow_html=True)
-    if st.button('✕', key='btn_clear_search', help='Hapus pencarian'):
-        st.session_state.search_input = ''
-        st.rerun()
+    # X button only appears when there's text typed
+    if search:
+        st.write('&nbsp;')
+        st.markdown('<div style="height:7px"></div>', unsafe_allow_html=True)
+        if st.button('✕', key='btn_clear_search', help='Hapus pencarian'):
+            st.session_state.search_input = ''
+            st.rerun()
 
 with fcol2:
     kelompok_list = ['Semua'] + sorted(df['kelompok'].unique().tolist())
