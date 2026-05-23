@@ -15,7 +15,8 @@ st.caption('SK Bupati Bulukumba Tahun 2025')
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv(CSV_PATH, dtype={'harga': int})
+    df = pd.read_csv(CSV_PATH)
+    df['harga'] = pd.to_numeric(df['harga'], errors='coerce').fillna(0).astype(int)
     df = df.sort_values(['kelompok', 'nama']).reset_index(drop=True)
     return df
 
@@ -45,9 +46,8 @@ with col_f2:
     selected_kelompok = st.selectbox('Kelompok Barang', kelompok_list)
 
 with col_f3:
-    satuan_list = ['Semua'] + sorted(
-        s for s in df['satuan'].unique().tolist() if s and s.strip()
-    )
+    satuan_values = df['satuan'].dropna().unique().tolist()
+    satuan_list = ['Semua'] + sorted(s for s in satuan_values if str(s).strip())
     selected_satuan = st.selectbox('Satuan', satuan_list)
 
 with col_f4:
