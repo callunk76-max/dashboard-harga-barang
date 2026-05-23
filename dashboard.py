@@ -207,35 +207,35 @@ col1, col2 = st.columns(2)
 col1.metric('Total Item', f'{total_items:,}')
 col2.metric('Kelompok Barang', total_kelompok)
 
-# --- Quick Bar Chart: Items per Kelompok ---
-group_counts = df['kelompok'].value_counts().head(12)
-st.bar_chart(group_counts, height=200)
-
 st.divider()
 
-# --- Filters (IMPROVED: text_input instead of selectbox) ---
-col_f1, col_f2, col_f3, col_f4 = st.columns([3, 2, 1.5, 2.5])
+# --- Filters ---
+fcol1, fcol1b, fcol2, fcol3, fcol4 = st.columns([2.5, 0.2, 1.5, 1.5, 2.3])
 
-with col_f1:
-    # Searchable selectbox with autocomplete (type to filter)
-    nama_list = [''] + sorted(df['nama'].dropna().unique().tolist())
-    search = st.selectbox(
+with fcol1:
+    search = st.text_input(
         '🔍 Cari barang (nama atau kode)',
-        nama_list,
         placeholder='Ketik nama atau kode barang...',
         key='search_input',
     )
 
-with col_f2:
+with fcol1b:
+    st.write('&nbsp;')  # label spacer
+    st.markdown('<div style="height:7px"></div>', unsafe_allow_html=True)
+    if st.button('✕', key='btn_clear_search', help='Hapus pencarian'):
+        st.session_state.search_input = ''
+        st.rerun()
+
+with fcol2:
     kelompok_list = ['Semua'] + sorted(df['kelompok'].unique().tolist())
     selected_kelompok = st.selectbox('Kelompok Barang', kelompok_list, key='filter_kelompok')
 
-with col_f3:
+with fcol3:
     satuan_values = df['satuan'].dropna().unique().tolist()
     satuan_list = ['Semua'] + sorted(s for s in satuan_values if str(s).strip())
     selected_satuan = st.selectbox('Satuan', satuan_list, key='filter_satuan')
 
-with col_f4:
+with fcol4:
     max_price = int(df['harga'].max())
     if max_price > 0:
         price_range = st.slider(
@@ -259,10 +259,9 @@ with col_f4:
 filtered = df.copy()
 
 if search:
-    # Filter by exact name match OR partial kode/nama match
+    # Filter by partial name or kode match
     mask = (
-        (filtered['nama'] == search)
-        | filtered['nama'].str.contains(search, case=False, na=False)
+        filtered['nama'].str.contains(search, case=False, na=False)
         | filtered['kode'].str.contains(search, case=False, na=False)
     )
     filtered = filtered[mask]
@@ -310,7 +309,7 @@ if not filtered.empty:
     )
 
     # --- Export ---
-    col_ex1, col_ex2, col_ex3, _ = st.columns([1.5, 1.5, 1.5, 2.5])
+    col_ex1, col_ex2, _ = st.columns([1.5, 1.5, 4])
     with col_ex1:
         csv = filtered.to_csv(index=False).encode('utf-8-sig')
         st.download_button(
@@ -325,16 +324,6 @@ if not filtered.empty:
             '⬇ Download All CSV',
             all_csv,
             'harga_barang_all.csv',
-            'text/csv',
-        )
-    with col_ex3:
-        # Chart: harga distribution
-        chart_df = filtered['harga'].value_counts().reset_index()
-        chart_df.columns = ['harga', 'count']
-        st.download_button(
-            '📊 Download Chart Data',
-            chart_df.to_csv(index=False).encode('utf-8-sig'),
-            'harga_distribusi.csv',
             'text/csv',
         )
 else:
