@@ -93,7 +93,7 @@ if not filtered.empty:
     if len(filtered) > 1:
         st.subheader('📈 Distribusi per Kelompok')
         chart_data = filtered.groupby('kelompok').agg(
-            Jumlah=('id', 'count'),
+            Jumlah=('harga', 'count'),
             Rata_rata=('harga', 'mean'),
         ).sort_values('Jumlah', ascending=False).head(15)
 
