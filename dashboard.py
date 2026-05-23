@@ -24,14 +24,10 @@ df = load_data()
 
 total_items = len(df)
 total_kelompok = df['kelompok'].nunique()
-avg_price = df['harga'].mean()
-max_price = df['harga'].max()
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2 = st.columns(2)
 col1.metric('Total Item', f'{total_items:,}')
 col2.metric('Kelompok Barang', total_kelompok)
-col3.metric('Rata-rata Harga', f'Rp {avg_price:,.0f}')
-col4.metric('Harga Tertinggi', f'Rp {max_price:,.0f}')
 
 st.divider()
 
@@ -39,7 +35,12 @@ st.divider()
 col_f1, col_f2, col_f3, col_f4 = st.columns(4)
 
 with col_f1:
-    search = st.text_input('🔍 Cari barang', placeholder='Nama / kode barang...')
+    nama_list = df['nama'].dropna().unique().tolist()
+    selected_nama = st.selectbox(
+        '🔍 Cari barang',
+        [''] + sorted(nama_list),
+        placeholder='Ketik nama barang...',
+    )
 
 with col_f2:
     kelompok_list = ['Semua'] + sorted(df['kelompok'].unique().tolist())
@@ -62,10 +63,10 @@ with col_f4:
 # --- Apply Filters ---
 filtered = df.copy()
 
-if search:
+if selected_nama:
     mask = (
-        filtered['nama'].str.contains(search, case=False, na=False)
-        | filtered['kode'].str.contains(search, case=False, na=False)
+        filtered['nama'].str.contains(selected_nama, case=False, na=False)
+        | filtered['kode'].str.contains(selected_nama, case=False, na=False)
     )
     filtered = filtered[mask]
 
@@ -79,40 +80,19 @@ filtered = filtered[
     (filtered['harga'] >= price_range[0]) & (filtered['harga'] <= price_range[1])
 ]
 
-# --- Stats ---
+# --- Table with row number ---
 st.subheader(f'📋 Hasil: {len(filtered)} item ditemukan')
 
 if not filtered.empty:
-    stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
-    stat_col1.metric('Item', f'{len(filtered):,}')
-    stat_col2.metric('Rata-rata', f'Rp {filtered["harga"].mean():,.0f}')
-    stat_col3.metric('Min', f'Rp {filtered["harga"].min():,}')
-    stat_col4.metric('Max', f'Rp {filtered["harga"].max():,}')
-
-    # --- Chart: Top 10 Kelompok ---
-    if len(filtered) > 1:
-        st.subheader('📈 Distribusi per Kelompok')
-        chart_data = filtered.groupby('kelompok').agg(
-            Jumlah=('harga', 'count'),
-            Rata_rata=('harga', 'mean'),
-        ).sort_values('Jumlah', ascending=False).head(15)
-
-        col_ch1, col_ch2 = st.columns(2)
-        with col_ch1:
-            st.bar_chart(chart_data['Jumlah'])
-        with col_ch2:
-            st.bar_chart(chart_data['Rata_rata'])
-
-    # --- Table ---
-    st.subheader('📄 Data Barang')
-    display_cols = ['kode', 'kelompok', 'nama', 'satuan', 'harga']
-    display_df = filtered[display_cols].copy()
+    display_df = filtered[['kode', 'kelompok', 'nama', 'satuan', 'harga']].copy()
+    display_df.insert(0, 'No', range(1, len(display_df) + 1))
     display_df['harga'] = display_df['harga'].apply(lambda x: f'Rp {x:,}')
 
     st.dataframe(
         display_df,
         use_container_width=True,
         column_config={
+            'No': st.column_config.NumberColumn('No', width='small'),
             'kode': 'Kode',
             'kelompok': 'Kelompok',
             'nama': 'Nama Barang',
