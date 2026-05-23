@@ -11,7 +11,7 @@ st.set_page_config(
 )
 
 CSV_PATH = os.path.join(os.path.dirname(__file__), 'harga_barang.csv')
-UPLOAD_PASSWORD = '13Kholil'
+UPLOAD_PASSWORD = os.environ.get('UPLOAD_PASSWORD', '')
 
 # --- Session state init ---
 if 'data_source' not in st.session_state:
@@ -24,12 +24,18 @@ if 'upload_auth' not in st.session_state:
 # --- CSS ---
 st.markdown("""
 <style>
-td:first-child, th:first-child {
-    max-width: 50px !important;
-    min-width: 40px !important;
-    width: 50px !important;
-    text-align: center !important;
-}
+    td:first-child, th:first-child {
+        max-width: 50px !important;
+        min-width: 40px !important;
+        width: 50px !important;
+        text-align: center !important;
+    }
+    .stTextInput > div > div > input {
+        font-size: 0.95rem;
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 1.8rem !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -70,7 +76,6 @@ def parse_pdf(file):
         import pdfplumber
         import pytesseract
         from PIL import Image
-        import io
     except ImportError:
         st.error('Library OCR tidak tersedia. Install: pip install pdfplumber pytesseract Pillow')
         return None
@@ -123,7 +128,7 @@ def parse_pdf(file):
     df = df.sort_values(['kelompok', 'nama']).reset_index(drop=True)
     return df
 
-# --- Sidebar: Upload ---
+# --- Sidebar ---
 with st.sidebar:
     st.header('📤 Upload Data')
     with st.expander('Upload file harga satuan', expanded=False):
@@ -131,13 +136,17 @@ with st.sidebar:
         if pw == UPLOAD_PASSWORD:
             st.session_state.upload_auth = True
             st.success('✅ Akses diberikan')
+        elif pw:
+            st.error('❌ Password salah')
 
+        if st.session_state.upload_auth:
             uploaded_file = st.file_uploader(
                 'Pilih file (CSV, Excel, PDF)',
                 type=['csv', 'xlsx', 'xls', 'pdf'],
+                key='file_uploader'
             )
 
-            if uploaded_file and st.button('Proses Upload'):
+            if uploaded_file and st.button('Proses Upload', key='btn_upload'):
                 ext = Path(uploaded_file.name).suffix.lower()
                 with st.spinner(f'Memproses {uploaded_file.name}...'):
                     if ext == '.csv':
@@ -157,12 +166,24 @@ with st.sidebar:
                     st.rerun()
 
             if st.session_state.uploaded_df is not None:
-                if st.button('🔄 Kembali ke data default'):
+                if st.button('🔄 Kembali ke data default', key='btn_reset'):
                     st.session_state.uploaded_df = None
                     st.session_state.data_source = 'default'
                     st.rerun()
-        elif pw:
-            st.error('❌ Password salah')
+
+    # --- Quick Stats in Sidebar ---
+    if st.session_state.data_source == 'upload' and st.session_state.uploaded_df is not None:
+        current_df = st.session_state.uploaded_df.copy()
+    else:
+        current_df = load_default_data()
+    
+    st.divider()
+    st.subheader('📊 Ringkasan')
+    st.caption(f'**Total Item:** {len(current_df):,}')
+    st.caption(f'**Kelompok:** {current_df["kelompok"].nunique()}')
+    st.caption(f'**Rata-rata Harga:** Rp {int(current_df["harga"].mean()):,}')
+    st.caption(f'**Harga Tertinggi:** Rp {int(current_df["harga"].max()):,}')
+    st.caption(f'**Harga Terendah:** Rp {int(current_df["harga"].min()):,}')
 
     st.divider()
     st.caption('**callunk76-max/dashboard-harga-barang**')
@@ -186,42 +207,51 @@ col1, col2 = st.columns(2)
 col1.metric('Total Item', f'{total_items:,}')
 col2.metric('Kelompok Barang', total_kelompok)
 
+# --- Quick Bar Chart: Items per Kelompok ---
+group_counts = df['kelompok'].value_counts().head(12)
+st.bar_chart(group_counts, height=200)
+
 st.divider()
 
-# --- Filters ---
+# --- Filters (IMPROVED: text_input instead of selectbox) ---
 col_f1, col_f2, col_f3, col_f4 = st.columns([3, 2, 1.5, 2.5])
 
 with col_f1:
-    nama_list = df['nama'].dropna().unique().tolist()
-    search = st.selectbox(
-        '🔍 Cari barang',
-        [''] + sorted(nama_list),
-        placeholder='Ketik nama barang...',
+    search = st.text_input(
+        '🔍 Cari barang (nama atau kode)',
+        placeholder='Ketik nama atau kode barang...',
+        key='search_input',
     )
 
 with col_f2:
     kelompok_list = ['Semua'] + sorted(df['kelompok'].unique().tolist())
-    selected_kelompok = st.selectbox('Kelompok Barang', kelompok_list)
+    selected_kelompok = st.selectbox('Kelompok Barang', kelompok_list, key='filter_kelompok')
 
 with col_f3:
     satuan_values = df['satuan'].dropna().unique().tolist()
     satuan_list = ['Semua'] + sorted(s for s in satuan_values if str(s).strip())
-    selected_satuan = st.selectbox('Satuan', satuan_list)
+    selected_satuan = st.selectbox('Satuan', satuan_list, key='filter_satuan')
 
 with col_f4:
     max_price = int(df['harga'].max())
-    price_range = st.slider(
-        'Rentang Harga (Rp)',
-        min_value=0,
-        max_value=max_price,
-        value=(0, max_price),
-        format='Rp %d',
-    )
+    if max_price > 0:
+        price_range = st.slider(
+            'Rentang Harga (Rp)',
+            min_value=0,
+            max_value=max_price,
+            value=(0, max_price),
+            format='Rp %d',
+            key='price_slider',
+        )
+    else:
+        price_range = (0, 1)
+        st.caption('Data harga belum tersedia')
 
 # --- Apply Filters ---
 filtered = df.copy()
 
 if search:
+    # Live filter as user types - matches nama or kode
     mask = (
         filtered['nama'].str.contains(search, case=False, na=False)
         | filtered['kode'].str.contains(search, case=False, na=False)
@@ -238,10 +268,19 @@ filtered = filtered[
     (filtered['harga'] >= price_range[0]) & (filtered['harga'] <= price_range[1])
 ]
 
-# --- Table with row number ---
+# --- Summary cards ---
 st.subheader(f'📋 Hasil: {len(filtered)} item ditemukan')
 
 if not filtered.empty:
+    col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+    col_s1.metric('Total Item', f'{len(filtered):,}')
+    col_s2.metric('Kelompok', filtered['kelompok'].nunique())
+    col_s3.metric('Rata-rata', f'Rp {int(filtered["harga"].mean()):,}')
+    col_s4.metric('Range', f'Rp {int(filtered["harga"].min()):,} - Rp {int(filtered["harga"].max()):,}')
+
+    st.divider()
+
+    # --- Table with row number ---
     display_df = filtered[['kode', 'kelompok', 'nama', 'satuan', 'harga']].copy()
     display_df.insert(0, 'No', range(1, len(display_df) + 1))
     display_df['harga'] = display_df['harga'].apply(lambda x: f'Rp {x:,}')
@@ -262,7 +301,7 @@ if not filtered.empty:
     )
 
     # --- Export ---
-    col_ex1, col_ex2, _ = st.columns([1, 1, 3])
+    col_ex1, col_ex2, col_ex3, _ = st.columns([1.5, 1.5, 1.5, 2.5])
     with col_ex1:
         csv = filtered.to_csv(index=False).encode('utf-8-sig')
         st.download_button(
@@ -277,6 +316,16 @@ if not filtered.empty:
             '⬇ Download All CSV',
             all_csv,
             'harga_barang_all.csv',
+            'text/csv',
+        )
+    with col_ex3:
+        # Chart: harga distribution
+        chart_df = filtered['harga'].value_counts().reset_index()
+        chart_df.columns = ['harga', 'count']
+        st.download_button(
+            '📊 Download Chart Data',
+            chart_df.to_csv(index=False).encode('utf-8-sig'),
+            'harga_distribusi.csv',
             'text/csv',
         )
 else:
