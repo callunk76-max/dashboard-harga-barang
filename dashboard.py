@@ -20,8 +20,18 @@ if 'uploaded_df' not in st.session_state:
     st.session_state.uploaded_df = None
 if 'upload_auth' not in st.session_state:
     st.session_state.upload_auth = False
-if 'search_key' not in st.session_state:
-    st.session_state.search_key = 0
+
+# --- CSS ---
+st.markdown("""
+<style>
+td:first-child, th:first-child {
+    max-width: 50px !important;
+    min-width: 40px !important;
+    width: 50px !important;
+    text-align: center !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # --- Helpers ---
 @st.cache_data
@@ -182,8 +192,12 @@ st.divider()
 col_f1, col_f2, col_f3, col_f4 = st.columns([3, 2, 1.5, 2.5])
 
 with col_f1:
-    sk = f's_{st.session_state.search_key}'
-    search = st.text_input('🔍 Cari barang', placeholder='Nama / kode barang...', key=sk)
+    nama_list = df['nama'].dropna().unique().tolist()
+    search = st.selectbox(
+        '🔍 Cari barang',
+        [''] + sorted(nama_list),
+        placeholder='Ketik nama barang...',
+    )
 
 with col_f2:
     kelompok_list = ['Semua'] + sorted(df['kelompok'].unique().tolist())
