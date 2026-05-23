@@ -452,6 +452,14 @@ with st.sidebar:
     st.caption('📦 v1.0')
 
 # --- Main ---
+# Load data first
+if st.session_state.data_source == 'upload' and st.session_state.uploaded_df is not None:
+    df = st.session_state.uploaded_df.copy()
+    st.info(f'📁 Menggunakan data upload: {len(df)} item')
+else:
+    df = get_default_data()
+    st.session_state.data_source = 'default'
+
 total_items = len(df)
 total_kelompok = df['kelompok'].nunique()
 st.markdown(f"""
@@ -463,16 +471,6 @@ st.markdown(f"""
     <div class="sub">SK Bupati Bulukumba Tahun 2025</div>
 </div>
 """, unsafe_allow_html=True)
-
-# Load data
-if st.session_state.data_source == 'upload' and st.session_state.uploaded_df is not None:
-    df = st.session_state.uploaded_df.copy()
-    st.info(f'📁 Menggunakan data upload: {len(df)} item')
-else:
-    df = get_default_data()
-    st.session_state.data_source = 'default'
-
-# Total items already shown in header badge - no need to repeat metrics here
 
 st.divider()
 
